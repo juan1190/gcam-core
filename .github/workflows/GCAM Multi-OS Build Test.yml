@@ -38,11 +38,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential \
             libboost-dev libboost-filesystem-dev libboost-system-dev \
-            libeigen3-dev libtbb-dev openjdk-17-jdk
+            libeigen3-dev libtbb-dev default-jdk
             
           echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which javac))))" >> "$GITHUB_ENV"
-          echo "JAVA_INCLUDE=-I$JH/include -I$JH/include/linux" >> "$GITHUB_ENV"
-          echo "JAVA_LIB=$JH/lib/server" >> "$GITHUB_ENV"
+          echo "JAVA_INCLUDE=${JAVA_HOME}/include" >> "$GITHUB_ENV"
+          echo "JAVA_LIB=${JAVA_HOME}/lib/server" >> "$GITHUB_ENV"
           echo "JARS_LIB=${HOME}/gcam-core/libs/jars/*"
           echo "BOOST_INCLUDE=/usr/include" >> "$GITHUB_ENV"
           echo "BOOST_LIB=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
