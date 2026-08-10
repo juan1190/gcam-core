@@ -40,13 +40,6 @@ jobs:
             libboost-dev libboost-filesystem-dev libboost-system-dev \
             libeigen3-dev libtbb-dev openjdk-17-jdk
             
-          # get neccesary libs to compile GCAm with JAVA
-          wget https://github.com/JGCRI/modelinterface/releases/download/v5.4/jars.zip
-          unzip jars.zip
-          rm jars.zip
-          cd ${HOME}/gcam-core/output/modelinterface
-          ln -s ${HOME}/gcam-core/libs/jars
-
           echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which javac))))" >> "$GITHUB_ENV"
           echo "JAVA_INCLUDE=$JH/include" >> "$GITHUB_ENV"
           echo "JAVA_LIB=$JH/lib/server" >> "$GITHUB_ENV"
@@ -71,6 +64,14 @@ jobs:
         run: |
           choco install boost-msvc-14.3 openjdk17 -y
 
+      - name: Download GCAM hars (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -L -o jars.zip https://github.com/JGCRI/modelinterface/releases/download/v5.4/jars.zip
+          unzip -q jars.zip -d "$HOME/gcam-libs"
+          ls -R "$HOME/gcam-libs"
+          echo "JARS_LIB=$HOME/gcam-libs/jars/*" >> "$GITHUB_ENV"
+      
       # build all 3 OS
       - name: Build GCAM (Linux)
         if: runner.os == 'Linux'
