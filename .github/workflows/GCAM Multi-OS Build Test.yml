@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-15-intel, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
@@ -122,9 +122,7 @@ jobs:
         shell: bash
         run: |
           set -eo pipefail
-          BUILD_START=$(date +%s)
-          # If arm64/x86_64 arch errors appear, switch matrix entry to an Intel
-          # runner (macos-15-intel). If target errors: xcodebuild -list -project ...
+          BUILD_START=$(date +%s).
           xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
             -configuration Release \
             build \
