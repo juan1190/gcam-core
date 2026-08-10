@@ -63,25 +63,6 @@ jobs:
         run: |
           brew install boost eigen tbb openjdk@17
 
-          # Real JDK home is buried under libexec (Homebrew quirk)
-          JDK_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"
-
-          echo "JAVA_HOME=$JDK_HOME" >> "$GITHUB_ENV"
-          echo "JAVA_INCLUDE=$JDK_HOME/include" >> "$GITHUB_ENV"
-          echo "JAVA_LIB=$JDK_HOME/lib/server" >> "$GITHUB_ENV"
-          echo "BOOST_INCLUDE=$(brew --prefix boost)/include" >> "$GITHUB_ENV"
-          echo "BOOST_LIB=$(brew --prefix boost)/lib" >> "$GITHUB_ENV"
-          echo "EIGEN_INCLUDE=$(brew --prefix eigen)/include/eigen3" >> "$GITHUB_ENV"
-          echo "TBB_INCLUDE=$(brew --prefix tbb)/include" >> "$GITHUB_ENV"
-          echo "TBB_LIB=$(brew --prefix tbb)/lib" >> "$GITHUB_ENV"
-
-          mkdir -p libs
-          ln -sfn "$(brew --prefix boost)" libs/boost-lib
-          ln -sfn "$(brew --prefix eigen)/include/eigen3" libs/eigen
-          ln -sfn "$(brew --prefix tbb)" libs/tbb
-          ln -sfn "$HOME/gcam-libs/jars" libs/jars
-          ln -sfn "$JDK_HOME" libs/java
-
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
