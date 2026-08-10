@@ -43,6 +43,8 @@ jobs:
           echo "BOOST_INCLUDE=/usr/include" >> "$GITHUB_ENV"
           echo "BOOST_LIB=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
           echo "EIGEN_INCLUDE=/usr/include/eigen3" >> "$GITHUB_ENV"
+          echo "TBB_INCLUDE=/usr/include" >> "$GITHUB_ENV"
+          echo "TBB_LIB=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
