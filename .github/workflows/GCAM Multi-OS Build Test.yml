@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
@@ -31,7 +31,15 @@ jobs:
         shell: bash
         run: echo "start_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
-      # install dependecies for each OS
+      # needed for all OSes
+      - name: Download GCAM jars
+        shell: bash
+        run: |
+          curl -L -o jars.zip https://github.com/JGCRI/modelinterface/releases/download/v5.4/jars.zip
+          unzip -q jars.zip -d "$HOME/gcam-libs"
+          echo "JARS_LIB=$HOME/gcam-libs/jars/*" >> "$GITHUB_ENV"
+
+      # install dependencies for each OS
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -40,10 +48,10 @@ jobs:
             libboost-dev libboost-filesystem-dev libboost-system-dev \
             libeigen3-dev libtbb-dev default-jdk
             
-          echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which javac))))" >> "$GITHUB_ENV"
-          echo "JAVA_INCLUDE=${JAVA_HOME}/include" >> "$GITHUB_ENV"
-          echo "JAVA_LIB=${JAVA_HOME}/lib/server" >> "$GITHUB_ENV"
-          echo "JARS_LIB=${HOME}/gcam-core/libs/jars/*"
+          JH=$(dirname $(dirname $(readlink -f $(which javac))))
+          echo "JAVA_HOME=$JH" >> "$GITHUB_ENV"
+          echo "JAVA_INCLUDE=$JH/include" >> "$GITHUB_ENV"
+          echo "JAVA_LIB=$JH/lib/server" >> "$GITHUB_ENV"
           echo "BOOST_INCLUDE=/usr/include" >> "$GITHUB_ENV"
           echo "BOOST_LIB=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
           echo "EIGEN_INCLUDE=/usr/include/eigen3" >> "$GITHUB_ENV"
@@ -54,24 +62,47 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew install boost eigen tbb openjdk@17
-          echo "JAVA_HOME=$(brew --prefix openjdk@17)" >> "$GITHUB_ENV"
+
+          # Real JDK home is buried under libexec (Homebrew quirk)
+          JDK_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"
+
+          echo "JAVA_HOME=$JDK_HOME" >> "$GITHUB_ENV"
+          echo "JAVA_INCLUDE=$JDK_HOME/include" >> "$GITHUB_ENV"
+          echo "JAVA_LIB=$JDK_HOME/lib/server" >> "$GITHUB_ENV"
           echo "BOOST_INCLUDE=$(brew --prefix boost)/include" >> "$GITHUB_ENV"
           echo "BOOST_LIB=$(brew --prefix boost)/lib" >> "$GITHUB_ENV"
           echo "EIGEN_INCLUDE=$(brew --prefix eigen)/include/eigen3" >> "$GITHUB_ENV"
+          echo "TBB_INCLUDE=$(brew --prefix tbb)/include" >> "$GITHUB_ENV"
+          echo "TBB_LIB=$(brew --prefix tbb)/lib" >> "$GITHUB_ENV"
+
+          mkdir -p libs
+          ln -sfn "$(brew --prefix boost)" libs/boost-lib
+          ln -sfn "$(brew --prefix eigen)/include/eigen3" libs/eigen
+          ln -sfn "$(brew --prefix tbb)" libs/tbb
+          ln -sfn "$HOME/gcam-libs/jars" libs/jars
+          ln -sfn "$JDK_HOME" libs/java
 
       - name: Install dependencies (Windows)
         if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          choco install boost-msvc-14.3 openjdk17 -y
+          choco install temurin17 -y --no-progress
+          choco install boost-msvc-14.3 -y --no-progress
 
-      - name: Download GCAM hars (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          curl -L -o jars.zip https://github.com/JGCRI/modelinterface/releases/download/v5.4/jars.zip
-          unzip -q jars.zip -d "$HOME/gcam-libs"
-          ls -R "$HOME/gcam-libs"
-          echo "JARS_LIB=$HOME/gcam-libs/jars/*" >> "$GITHUB_ENV"
-      
+          $jdk = (Get-ChildItem "C:\Program Files\Eclipse Adoptium\jdk-17*" | Select-Object -First 1).FullName
+          "JAVA_HOME=$jdk" >> $env:GITHUB_ENV
+          "JAVA_INCLUDE=$jdk\include" >> $env:GITHUB_ENV
+          "JAVA_LIB=$jdk\lib" >> $env:GITHUB_ENV
+
+          $boost = (Get-ChildItem "C:\local\boost_*" | Select-Object -First 1).FullName
+          "BOOST_INCLUDE=$boost" >> $env:GITHUB_ENV
+          "BOOST_LIB=$boost\lib64-msvc-14.3" >> $env:GITHUB_ENV
+
+          New-Item -ItemType Directory -Force -Path libs | Out-Null
+          cmd /c mklink /J libs\boost-lib "$boost"
+          cmd /c mklink /J libs\java "$jdk"
+          cmd /c mklink /J libs\jars "$env:USERPROFILE\gcam-libs\jars"
+
       # build all 3 OS
       - name: Build GCAM (Linux)
         if: runner.os == 'Linux'
@@ -92,9 +123,14 @@ jobs:
         run: |
           set -eo pipefail
           BUILD_START=$(date +%s)
+          # If arm64/x86_64 arch errors appear, switch matrix entry to an Intel
+          # runner (macos-15-intel). If target errors: xcodebuild -list -project ...
           xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
             -configuration Release \
-            build 2>&1 | tee build.log
+            build \
+            HEADER_SEARCH_PATHS="\$(inherited) $BOOST_INCLUDE $EIGEN_INCLUDE $TBB_INCLUDE $JAVA_INCLUDE $JAVA_INCLUDE/darwin" \
+            LIBRARY_SEARCH_PATHS="\$(inherited) $BOOST_LIB $TBB_LIB $JAVA_LIB" \
+            2>&1 | tee build.log
           BUILD_END=$(date +%s)
           echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
 
@@ -105,7 +141,12 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $start = Get-Date
-          msbuild cvs\objects\build\vc10\objects.sln /p:Configuration=Release /m `
+
+          msbuild cvs\objects\build\vc10\objects.sln `
+            /p:Configuration=Release /p:Platform=x64 `
+            /p:PlatformToolset=v143 /m `
+            /p:IncludePath="$env:BOOST_INCLUDE;$env:JAVA_INCLUDE;$env:JAVA_INCLUDE\win32;`$(IncludePath)" `
+            /p:LibraryPath="$env:BOOST_LIB;$env:JAVA_LIB;`$(LibraryPath)" `
             | Tee-Object -FilePath build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $seconds = [int]((Get-Date) - $start).TotalSeconds
