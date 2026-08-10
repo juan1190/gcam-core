@@ -39,9 +39,18 @@ jobs:
           sudo apt-get install -y build-essential \
             libboost-dev libboost-filesystem-dev libboost-system-dev \
             libeigen3-dev libtbb-dev openjdk-17-jdk
+            
+          # get neccesary libs to compile GCAm with JAVA
+          wget https://github.com/JGCRI/modelinterface/releases/download/v5.4/jars.zip
+          unzip jars.zip
+          rm jars.zip
+          cd ${HOME}/gcam-core/output/modelinterface
+          ln -s ${HOME}/gcam-core/libs/jars
+
           echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which javac))))" >> "$GITHUB_ENV"
           echo "JAVA_INCLUDE=$JH/include" >> "$GITHUB_ENV"
           echo "JAVA_LIB=$JH/lib/server" >> "$GITHUB_ENV"
+          echo "JARS_LIB=${HOME}/gcam-core/libs/jars/*"
           echo "BOOST_INCLUDE=/usr/include" >> "$GITHUB_ENV"
           echo "BOOST_LIB=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
           echo "EIGEN_INCLUDE=/usr/include/eigen3" >> "$GITHUB_ENV"
