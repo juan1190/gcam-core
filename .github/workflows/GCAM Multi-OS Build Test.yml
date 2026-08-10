@@ -41,7 +41,7 @@ jobs:
             libeigen3-dev libtbb-dev openjdk-17-jdk
             
           echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which javac))))" >> "$GITHUB_ENV"
-          echo "JAVA_INCLUDE=$JH/include" >> "$GITHUB_ENV"
+          echo "JAVA_INCLUDE=-I$JH/include -I$JH/include/linux" >> "$GITHUB_ENV"
           echo "JAVA_LIB=$JH/lib/server" >> "$GITHUB_ENV"
           echo "JARS_LIB=${HOME}/gcam-core/libs/jars/*"
           echo "BOOST_INCLUDE=/usr/include" >> "$GITHUB_ENV"
