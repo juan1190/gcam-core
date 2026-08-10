@@ -122,13 +122,10 @@ jobs:
         shell: bash
         run: |
           set -eo pipefail
-          BUILD_START=$(date +%s).
+          BUILD_START=$(date +%s)
           xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
             -configuration Release \
-            build \
-            HEADER_SEARCH_PATHS="\$(inherited) $BOOST_INCLUDE $EIGEN_INCLUDE $TBB_INCLUDE $JAVA_INCLUDE $JAVA_INCLUDE/darwin" \
-            LIBRARY_SEARCH_PATHS="\$(inherited) $BOOST_LIB $TBB_LIB $JAVA_LIB" \
-            2>&1 | tee build.log
+            build 2>&1 | tee build.log
           BUILD_END=$(date +%s)
           echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
 
@@ -139,12 +136,7 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           $start = Get-Date
-
-          msbuild cvs\objects\build\vc10\objects.sln `
-            /p:Configuration=Release /p:Platform=x64 `
-            /p:PlatformToolset=v143 /m `
-            /p:IncludePath="$env:BOOST_INCLUDE;$env:JAVA_INCLUDE;$env:JAVA_INCLUDE\win32;`$(IncludePath)" `
-            /p:LibraryPath="$env:BOOST_LIB;$env:JAVA_LIB;`$(LibraryPath)" `
+          msbuild cvs\objects\build\vc10\objects.sln /p:Configuration=Release /m `
             | Tee-Object -FilePath build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $seconds = [int]((Get-Date) - $start).TotalSeconds
