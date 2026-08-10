@@ -1,0 +1,149 @@
+name: GCAM Multi-OS Build Test
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Record start time
+        id: start
+        shell: bash
+        run: echo "start_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      # install dependecies for each OS
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential \
+            libboost-dev libboost-filesystem-dev libboost-system-dev \
+            libeigen3-dev libtbb-dev openjdk-17-jdk
+          echo "JAVA_HOME=$(dirname $(dirname $(readlink -f $(which javac))))" >> "$GITHUB_ENV"
+          echo "BOOST_INCLUDE=/usr/include" >> "$GITHUB_ENV"
+          echo "BOOST_LIB=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
+          echo "EIGEN_INCLUDE=/usr/include/eigen3" >> "$GITHUB_ENV"
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install boost eigen tbb openjdk@17
+          echo "JAVA_HOME=$(brew --prefix openjdk@17)" >> "$GITHUB_ENV"
+          echo "BOOST_INCLUDE=$(brew --prefix boost)/include" >> "$GITHUB_ENV"
+          echo "BOOST_LIB=$(brew --prefix boost)/lib" >> "$GITHUB_ENV"
+          echo "EIGEN_INCLUDE=$(brew --prefix eigen)/include/eigen3" >> "$GITHUB_ENV"
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install boost-msvc-14.3 openjdk17 -y
+
+      # build all 3 OS
+      - name: Build GCAM (Linux)
+        if: runner.os == 'Linux'
+        id: build-linux
+        shell: bash
+        run: |
+          set -eo pipefail
+          BUILD_START=$(date +%s)
+          cd cvs/objects/build/linux
+          make gcam -j$(nproc) 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
+          BUILD_END=$(date +%s)
+          echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
+
+      - name: Build GCAM (macOS)
+        if: runner.os == 'macOS'
+        id: build-macos
+        shell: bash
+        run: |
+          set -eo pipefail
+          BUILD_START=$(date +%s)
+          xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
+            -configuration Release \
+            build 2>&1 | tee build.log
+          BUILD_END=$(date +%s)
+          echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
+
+      - name: Build GCAM (Windows)
+        if: runner.os == 'Windows'
+        id: build-win
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $start = Get-Date
+          msbuild cvs\objects\build\vc10\objects.sln /p:Configuration=Release /m `
+            | Tee-Object -FilePath build.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $seconds = [int]((Get-Date) - $start).TotalSeconds
+          "build_seconds=$seconds" >> $env:GITHUB_OUTPUT
+
+      - name: Verify executable
+        shell: bash
+        run: |
+          ls exe/ || true
+          test -f exe/gcam.exe && echo "Build artifact found"
+          
+      - name: Collect metrics
+        if: always()
+        shell: bash
+        run: |
+          END_TS=$(date +%s)
+          TOTAL=$((END_TS - ${{ steps.start.outputs.start_ts }}))
+          BUILD_SECS=${{ steps.build-linux.outputs.build_seconds || steps.build-macos.outputs.build_seconds || steps.build-win.outputs.build_seconds || 0 }}
+          BINARY_SIZE=$(stat -c %s exe/gcam.exe 2>/dev/null || stat -f %z exe/gcam.exe 2>/dev/null || echo 0)
+          WARNINGS=$(grep -ci "warning" build.log 2>/dev/null || echo 0)
+
+          cat > metrics.json <<EOF
+          {
+            "os": "${{ matrix.os }}",
+            "commit": "${{ github.sha }}",
+            "branch": "${{ github.ref_name }}",
+            "date_utc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "total_workflow_seconds": $TOTAL,
+            "build_seconds": $BUILD_SECS,
+            "binary_size_bytes": $BINARY_SIZE,
+            "compiler_warnings": $WARNINGS
+          }
+          EOF
+          cat metrics.json
+
+          # render a summary table on the run page
+          {
+            echo "### GCAM Build Metrics (${{ matrix.os }})"
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Build time | ${BUILD_SECS}s |"
+            echo "| Total time | ${TOTAL}s |"
+            echo "| Binary size | ${BINARY_SIZE} bytes |"
+            echo "| Warnings | ${WARNINGS} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload metrics and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gcam-metrics-${{ matrix.os }}-${{ github.run_number }}
+          path: |
+            metrics.json
+            build.log
+          retention-days: 90
