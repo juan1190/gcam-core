@@ -13,13 +13,14 @@ concurrency:
 
 env:
   GCAM_VERSION: v9.1
+  JARS_VERSION: v5.4
 
 jobs:
   build-test:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
@@ -33,7 +34,27 @@ jobs:
         id: start
         shell: bash
         run: echo "start_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
-        
+
+      # ---------- Jars (all OSes, cached) ----------
+      - name: Cache jars
+        id: cache-jars
+        uses: actions/cache@v4
+        with:
+          path: ~/gcam-libs/jars
+          key: gcam-jars-${{ env.JARS_VERSION }}
+
+      - name: Download jars
+        if: steps.cache-jars.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          curl -fL -o jars.zip https://github.com/JGCRI/modelinterface/releases/download/${{ env.JARS_VERSION }}/jars.zip
+          unzip -q jars.zip -d "$HOME/gcam-libs"
+          rm jars.zip
+
+      - name: Set JARS_LIB
+        shell: bash
+        run: echo "JARS_LIB=$HOME/gcam-libs/jars" >> "$GITHUB_ENV"
+
       # ---------- Linux ----------
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -58,7 +79,14 @@ jobs:
         run: |
           brew update
           brew install boost eigen openjdk tbb
+          mkdir gcam-core/libs
           
+          ln -sfn "$(brew --prefix boost)/include"        gcam-core/libs/boost-lib
+          ln -sfn "$(brew --prefix eigen)/include/eigen3" gcam-core/libs/eigen
+          ln -sfn "$(brew --prefix openjdk)/include"      gcam-core/libs/java
+          ln -sfn "$GITHUB_WORKSPACE/release-libs/tbb"    gcam-core/libs/tbb
+          ln -sfn "$HOME/gcam-libs/jars"                  gcam-core/libs/jars
+
       # ---------- Builds ----------
       - name: Build GCAM (Linux)
         if: runner.os == 'Linux'
@@ -71,20 +99,7 @@ jobs:
           make gcam -j$(nproc) 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           BUILD_END=$(date +%s)
           echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
-          
-      - name: Build GCAM (macOS)
-        if: runner.os == 'macOS'
-        id: build-macos
-        shell: bash
-        run: |
-          set -eo pipefail
-          BUILD_START=$(date +%s)
-          xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
-            -configuration Release \
-            build 2>&1 | tee build.log
-          BUILD_END=$(date +%s)
-          echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
-      
+
       - name: Verify executable
         shell: bash
         run: |
@@ -141,4 +156,4 @@ jobs:
           path: |
             metrics.json
             build.log
-          retention-days: 90
+          retention-days: 9
