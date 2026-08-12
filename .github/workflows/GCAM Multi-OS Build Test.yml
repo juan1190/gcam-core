@@ -79,13 +79,16 @@ jobs:
         run: |
           brew update
           brew install boost eigen openjdk tbb
-          mkdir gcam-core/libs
+          mkdir libs
           
-          ln -sfn "$(brew --prefix boost)/include"        gcam-core/libs/boost-lib
-          ln -sfn "$(brew --prefix eigen)/include/eigen3" gcam-core/libs/eigen
-          ln -sfn "$(brew --prefix openjdk)/include"      gcam-core/libs/java
-          ln -sfn "$GITHUB_WORKSPACE/release-libs/tbb"    gcam-core/libs/tbb
-          ln -sfn "$HOME/gcam-libs/jars"                  gcam-core/libs/jars
+          ln -s "$(brew --prefix boost)/include"        libs/boost
+          ln -s "$(brew --prefix eigen)/include/eigen3" libs/eigen
+          ln -s "$(brew --prefix openjdk)/include"      libs/java/include
+          ln -s "$(brew --prefix openjdk)/server"       libs/java/server
+          ln -s "$GITHUB_WORKSPACE/release-libs/tbb"    libs/tbb
+          ln -s "$HOME/gcam-libs/jars"                  libs/jars
+
+          ls -la libs
 
       # ---------- Builds ----------
       - name: Build GCAM (Linux)
