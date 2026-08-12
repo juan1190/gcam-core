@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
@@ -123,7 +123,9 @@ jobs:
           ln -sfn "$HOME/gcam-libs/jars"                  libs/jars
 
           ls -la libs
-
+          ls -la libs/jars
+          ls -la libs/tbb
+          
       # ---------- Builds ----------
       - name: Build GCAM (Linux)
         if: runner.os == 'Linux'
