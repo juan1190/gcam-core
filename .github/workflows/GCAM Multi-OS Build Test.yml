@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15-intel, windows-latest]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
@@ -55,116 +55,13 @@ jobs:
         shell: bash
         run: echo "JARS_LIB=$HOME/gcam-libs/jars/*" >> "$GITHUB_ENV"
 
-      # ---------- Release-package libs: runtime deps (tbb) for macOS/Windows ----------
-      - name: Cache GCAM release libs
-        if: runner.os != 'Linux'
-        id: cache-libs
-        uses: actions/cache@v4
-        with:
-          path: release-libs
-          key: gcam-release-libs-${{ runner.os }}-${{ env.GCAM_VERSION }}
-
-      - name: Validate cached release libs
-        if: runner.os != 'Linux'
-        id: libs-check
-        shell: bash
-        run: |
-          if [ -d release-libs ] && [ "$(ls -A release-libs)" ]; then
-            echo "valid=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "valid=false" >> "$GITHUB_OUTPUT"
-            rm -rf release-libs
-          fi
-
-      - name: Get GCAM release libs (macOS)
-        if: runner.os == 'macOS' && steps.libs-check.outputs.valid != 'true'
-        shell: bash
-        run: |
-          curl -fL -o release.zip \
-            https://github.com/JGCRI/gcam-core/releases/download/gcam-${{ env.GCAM_VERSION }}/gcam-${{ env.GCAM_VERSION }}-Mac-Release-Package.zip
-          unzip -q release.zip "*libs/*" -d extracted
-          LIBS_DIR=$(find extracted -type d -name libs | head -1)
-          mv "$LIBS_DIR" release-libs
-          rm -rf extracted release.zip
-          ls -la release-libs
-
-      - name: Get GCAM release libs (Windows)
-        if: runner.os == 'Windows' && steps.libs-check.outputs.valid != 'true'
-        shell: bash
-        run: |
-          curl -fL -o release.zip \
-            https://github.com/JGCRI/gcam-core/releases/download/gcam-${{ env.GCAM_VERSION }}/gcam-${{ env.GCAM_VERSION }}-Windows-Release-Package.zip
-          unzip -q release.zip "*libs/*" -d extracted
-          LIBS_DIR=$(find extracted -type d -name libs | head -1)
-          mv "$LIBS_DIR" release-libs
-          rm -rf extracted release.zip
-          ls -la release-libs
-
-      # ---------- macOS: assemble libs/ exactly as objects.xcodeproj expects ----------
-      # Verified from project.pbxproj (Release config):
-      #   HEADER_SEARCH_PATHS: libs/boost-lib, libs/java/include,
-      #     libs/java/include/darwin, libs/eigen, libs/tbb/include
-      #   LIBRARY_SEARCH_PATHS: libs/java/lib, libs/tbb/lib   (links -ljvm)
-      - name: Assemble libs (macOS)
-        if: runner.os == 'macOS'
-        shell: bash
-        run: |
-          brew install boost eigen
-          brew install --cask temurin@17
-          JDK_HOME=$(/usr/libexec/java_home -v 17)
-          echo "JAVA_HOME=$JDK_HOME" >> "$GITHUB_ENV"
-
-          mkdir -p libs libs/java
-          ln -sfn "$(brew --prefix boost)/include"        libs/boost-lib
-          ln -sfn "$(brew --prefix eigen)/include/eigen3" libs/eigen
-          ln -sfn "$JDK_HOME/include"                     libs/java/include
-          ln -sfn "$JDK_HOME/lib/server"                  libs/java/lib
-          ln -sfn "$GITHUB_WORKSPACE/release-libs/tbb"    libs/tbb
-          ln -sfn "$HOME/gcam-libs/jars"                  libs/jars
-
-          # Preflight — fail in 1 second, not 20 minutes into the build
-          test -f libs/boost-lib/boost/lexical_cast.hpp || { echo "boost wrong"; ls libs/boost-lib | head; exit 1; }
-          test -f libs/eigen/Eigen/Core                  || { echo "eigen wrong"; ls libs/eigen | head; exit 1; }
-          test -f libs/java/include/jni.h                || { echo "java include wrong"; exit 1; }
-          test -f libs/java/lib/libjvm.dylib             || { echo "libjvm wrong"; ls libs/java/lib | head; exit 1; }
-          test -d libs/tbb/include                       || { echo "tbb layout unexpected"; ls release-libs; exit 1; }
-          echo "All preflight checks passed"
-          ls -la libs
-
-      # ---------- Windows: assemble libs/ (layout to be confirmed from vcxproj) ----------
-      - name: Assemble libs (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install temurin17 -y --no-progress
-          choco install boost-msvc-14.3 -y --no-progress
-
-          $jdk = (Get-ChildItem "C:\Program Files\Eclipse Adoptium\jdk-17*" | Select-Object -First 1).FullName
-          "JAVA_HOME=$jdk" >> $env:GITHUB_ENV
-          $boost = (Get-ChildItem "C:\local\boost_*" | Select-Object -First 1).FullName
-
-          # VERIFY expected names/depths once:
-          # findstr /s /i "AdditionalIncludeDirectories AdditionalLibraryDirectories" cvs\objects\build\vc10\*.vcxproj
-          New-Item -ItemType Directory -Force -Path libs, libs\java | Out-Null
-          cmd /c mklink /J libs\boost-lib "$boost"
-          cmd /c mklink /J libs\java\include "$jdk\include"
-          cmd /c mklink /J libs\java\lib "$jdk\lib"
-          cmd /c mklink /J libs\tbb "$env:GITHUB_WORKSPACE\release-libs\tbb"
-          cmd /c mklink /J libs\jars "$env:USERPROFILE\gcam-libs\jars"
-
-          # Preflight
-          if (-not (Test-Path libs\boost-lib\boost\lexical_cast.hpp)) { Write-Host "boost depth wrong"; Get-ChildItem libs\boost-lib | Select-Object -First 5; exit 1 }
-          if (-not (Test-Path libs\java\include\jni.h)) { Write-Host "java include wrong"; exit 1 }
-          Write-Host "Preflight passed"
-          Get-ChildItem libs
-
       # ---------- Linux ----------
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential \
-            libboost-dev libboost-filesystem-dev libboost-system-dev \
+            libboost-dev \
             libeigen3-dev libtbb-dev openjdk-17-jdk
 
           JH=$(dirname $(dirname $(readlink -f $(which javac))))
@@ -176,10 +73,6 @@ jobs:
           echo "EIGEN_INCLUDE=/usr/include/eigen3" >> "$GITHUB_ENV"
           echo "TBB_INCLUDE=/usr/include" >> "$GITHUB_ENV"
           echo "TBB_LIB=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
-
-      - name: Set up MSBuild
-        if: runner.os == 'Windows'
-        uses: microsoft/setup-msbuild@v2
 
       # ---------- Builds ----------
       - name: Build GCAM (Linux)
@@ -193,35 +86,6 @@ jobs:
           make gcam -j$(nproc) 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           BUILD_END=$(date +%s)
           echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
-
-      - name: Build GCAM (macOS)
-        if: runner.os == 'macOS'
-        id: build-macos
-        shell: bash
-        run: |
-          set -eo pipefail
-          BUILD_START=$(date +%s)
-          xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
-            -configuration Release \
-            build 2>&1 | tee build.log
-          BUILD_END=$(date +%s)
-          echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
-
-      - name: Build GCAM (Windows)
-        if: runner.os == 'Windows'
-        id: build-win
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $start = Get-Date
-          # VERIFY the .sln filename inside vc10
-          msbuild cvs\objects\build\vc10\objects.sln `
-            /p:Configuration=Release /p:Platform=x64 `
-            /p:PlatformToolset=v143 /m `
-            | Tee-Object -FilePath build.log
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          $seconds = [int]((Get-Date) - $start).TotalSeconds
-          "build_seconds=$seconds" >> $env:GITHUB_OUTPUT
 
       - name: Verify executable
         shell: bash
@@ -237,7 +101,6 @@ jobs:
           path: exe/
           retention-days: 14
 
-      # ---------- Metrics ----------
       - name: Collect metrics
         if: always()
         shell: bash
