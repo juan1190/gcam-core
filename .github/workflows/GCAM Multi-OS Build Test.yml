@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
@@ -61,8 +61,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential \
-            libboost-dev \
-            libeigen3-dev libtbb-dev openjdk-17-jdk
+            libboost-dev libeigen3-dev libtbb-dev openjdk-17-jdk
 
           JH=$(dirname $(dirname $(readlink -f $(which javac))))
           echo "JAVA_HOME=$JH" >> "$GITHUB_ENV"
@@ -79,9 +78,10 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install boost eigen openjdk
-          
+          brew install boost eigen openjdk tbb
+
           JH=$(dirname $(dirname $(readlink -f $(which javac))))
+          echo "JAVA_HOME=$JH" >> "$GITHUB_ENV"
           echo "JAVA_HOME=$JH" >> "$GITHUB_ENV"
           echo "JAVA_INCLUDE=$JH/include" >> "$GITHUB_ENV"
           echo "JAVA_LIB=$JH/lib/server" >> "$GITHUB_ENV"
@@ -98,7 +98,20 @@ jobs:
           make gcam -j$(nproc) 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           BUILD_END=$(date +%s)
           echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
-
+          
+      - name: Build GCAM (macOS)
+        if: runner.os == 'macOS'
+        id: build-macos
+        shell: bash
+        run: |
+          set -eo pipefail
+          BUILD_START=$(date +%s)
+          xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
+            -configuration Release \
+            build 2>&1 | tee build.log
+          BUILD_END=$(date +%s)
+          echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
+      
       - name: Verify executable
         shell: bash
         run: |
