@@ -80,9 +80,11 @@ jobs:
         run: |
           brew update
           brew install boost eigen openjdk
-
+          
           JH=$(dirname $(dirname $(readlink -f $(which javac))))
           echo "JAVA_HOME=$JH" >> "$GITHUB_ENV"
+          echo "JAVA_INCLUDE=$JH/include" >> "$GITHUB_ENV"
+          echo "JAVA_LIB=$JH/lib/server" >> "$GITHUB_ENV"
 
       # ---------- Builds ----------
       - name: Build GCAM (Linux)
