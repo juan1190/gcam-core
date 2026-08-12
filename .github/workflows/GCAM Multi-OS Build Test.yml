@@ -88,17 +88,9 @@ jobs:
           ln -sfn "$(brew --prefix eigen)/include/eigen3" libs/eigen
           ln -sfn "$JDK_HOME/include"                     libs/java/include
           ln -sfn "$JDK_HOME/lib/server"                  libs/java/lib
-          ln -sfn "$(brew --prefix tbb)/include"          libs/tbb
+          ln -sfn "$(brew --prefix tbb)"                  libs/tbb
           ln -sfn "$HOME/gcam-libs/jars"                  libs/jars
           
-          # Preflight — fail in 1 second, not 20 minutes into the build
-          test -f libs/boost-lib/boost/lexical_cast.hpp || { echo "boost wrong"; ls libs/boost-lib | head; exit 1; }
-          test -f libs/eigen/Eigen/Core                  || { echo "eigen wrong"; ls libs/eigen | head; exit 1; }
-          test -f libs/java/include/jni.h                || { echo "java include wrong"; exit 1; }
-          test -f libs/java/lib/libjvm.dylib             || { echo "libjvm wrong"; ls libs/java/lib | head; exit 1; }
-          test -d libs/tbb/include                       || { echo "tbb layout unexpected"; ls release-libs; exit 1; }
-          echo "All preflight checks passed"
-
           ls -la libs
 
       # ---------- Builds ----------
