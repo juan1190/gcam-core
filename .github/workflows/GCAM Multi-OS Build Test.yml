@@ -105,7 +105,20 @@ jobs:
           make gcam -j$(nproc) 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
           BUILD_END=$(date +%s)
           echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
-
+     
+      - name: Build GCAM (macOS)
+        if: runner.os == 'macOS'
+        id: build-macos
+        shell: bash
+        run: |
+          set -eo pipefail
+          BUILD_START=$(date +%s)
+          xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
+            -configuration Release \
+            build 2>&1 | tee build.log
+          BUILD_END=$(date +%s)
+          echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
+     
       - name: Verify executable
         shell: bash
         run: |
@@ -119,7 +132,7 @@ jobs:
           name: gcam-exe-${{ github.run_number }}
           path: exe/
           retention-days: 14
-
+        
       - name: Collect metrics
         if: always()
         shell: bash
