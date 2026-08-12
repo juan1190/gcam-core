@@ -13,14 +13,13 @@ concurrency:
 
 env:
   GCAM_VERSION: v9.1
-  JARS_VERSION: v5.4
 
 jobs:
   build-test:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
+        os: [ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
@@ -34,27 +33,7 @@ jobs:
         id: start
         shell: bash
         run: echo "start_ts=$(date +%s)" >> "$GITHUB_OUTPUT"
-
-      # ---------- Jars (all OSes, cached) ----------
-      - name: Cache jars
-        id: cache-jars
-        uses: actions/cache@v4
-        with:
-          path: ~/gcam-libs/jars
-          key: gcam-jars-${{ env.JARS_VERSION }}
-
-      - name: Download jars
-        if: steps.cache-jars.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          curl -fL -o jars.zip https://github.com/JGCRI/modelinterface/releases/download/${{ env.JARS_VERSION }}/jars.zip
-          unzip -q jars.zip -d "$HOME/gcam-libs"
-          rm jars.zip
-
-      - name: Set JARS_LIB
-        shell: bash
-        run: echo "JARS_LIB=$HOME/gcam-libs/jars/*" >> "$GITHUB_ENV"
-
+        
       # ---------- Linux ----------
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -79,13 +58,7 @@ jobs:
         run: |
           brew update
           brew install boost eigen openjdk tbb
-
-          JH=$(dirname $(dirname $(readlink -f $(which javac))))
-          echo "JAVA_HOME=$JH" >> "$GITHUB_ENV"
-          echo "JAVA_HOME=$JH" >> "$GITHUB_ENV"
-          echo "JAVA_INCLUDE=$JH/include" >> "$GITHUB_ENV"
-          echo "JAVA_LIB=$JH/lib/server" >> "$GITHUB_ENV"
-
+          
       # ---------- Builds ----------
       - name: Build GCAM (Linux)
         if: runner.os == 'Linux'
