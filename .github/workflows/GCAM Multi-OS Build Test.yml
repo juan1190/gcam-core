@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos15-xlarge]
+        os: [ubuntu-latest, macos-latest-xlarge]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
