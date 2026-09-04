@@ -77,17 +77,6 @@ jobs:
             rm -rf release-libs
           fi
 
-      - name: Get GCAM release libs (macOS)
-        if: runner.os == 'macOS' && steps.libs-check.outputs.valid != 'true'
-        shell: bash
-        run: |
-          curl -fL -o release.zip \
-            https://github.com/JGCRI/gcam-core/releases/download/gcam-${{ env.GCAM_VERSION }}/gcam-${{ env.GCAM_VERSION }}-Mac-Release-Package.zip
-          unzip -q release.zip "*libs/*" -d extracted
-          LIBS_DIR=$(find extracted -type d -name libs | head -1)
-          mv "$LIBS_DIR" libs
-          rm -rf extracted release.zip
-          ls -la libs
 
       # ---------- Linux ----------
       - name: Install dependencies (Linux)
@@ -116,7 +105,7 @@ jobs:
           JDK_HOME=$(/usr/libexec/java_home -v 17)
           echo "JAVA_HOME=$JDK_HOME" >> "$GITHUB_ENV"
 
-          ls -la $(brew --prefix tbb)
+          mkdir libs
 
           ln -sfn "$(brew --prefix boost)/include"        libs/boost-lib
           ln -sfn "$(brew --prefix eigen)/include/eigen3" libs/eigen
