@@ -95,7 +95,6 @@ jobs:
           echo "TBB_INCLUDE=/usr/include" >> "$GITHUB_ENV"
           echo "TBB_LIB=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
 
-      # ---------- macOS ----------
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -105,18 +104,23 @@ jobs:
           JDK_HOME=$(/usr/libexec/java_home -v 17)
           echo "JAVA_HOME=$JDK_HOME" >> "$GITHUB_ENV"
 
-          mkdir libs
+          mkdir -p libs/java
 
+          # boost-lib must contain boost/ headers directly
           ln -sfn "$(brew --prefix boost)/include"        libs/boost-lib
+          # eigen headers live directly under libs/eigen
           ln -sfn "$(brew --prefix eigen)/include/eigen3" libs/eigen
-          ln -sfn "$(brew --prefix tbb)/include/tbb"      libs/tbb
+          # tbb must be the PREFIX: project uses libs/tbb/include and libs/tbb/lib
+          ln -sfn "$(brew --prefix tbb)"                  libs/tbb
           ln -sfn "$JDK_HOME/include"                     libs/java/include
           ln -sfn "$JDK_HOME/lib/server"                  libs/java/lib
           ln -sfn "$HOME/gcam-libs/jars"                  libs/jars
 
-          ls -la libs
-          ls -la libs/jars
-          ls -la libs/tbb
+          # sanity checks — fail early with a useful message
+          test -f libs/tbb/include/tbb/tbb.h
+          test -f libs/boost-lib/boost/version.hpp
+          test -f libs/eigen/Eigen/Core || ls libs/eigen
+          test -f libs/java/include/jni.h
           
       # ---------- Builds ----------
       - name: Build GCAM (Linux)
@@ -138,10 +142,12 @@ jobs:
         run: |
           set -eo pipefail
           BUILD_START=$(date +%s)
-          xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj  \
+          xcodebuild -list -project cvs/objects/build/xcode3/objects.xcodeproj
+          xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
+            -target objects \
             -configuration Release \
+            ARCHS=$(uname -m) \
             ONLY_ACTIVE_ARCH=YES \
-            -scheme objects \
             build 2>&1 | tee build.log
           BUILD_END=$(date +%s)
           echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
