@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest]
+        os: [macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
@@ -151,7 +151,10 @@ jobs:
             build 2>&1 | tee build.log
           BUILD_END=$(date +%s)
           echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
-
+          
+          # Xcode stages the product here; normalize to exe/gcam.exe
+          cp exe/build/UninstalledProducts/macosx/gcam exe/gcam.exe
+          
       - name: Verify executable
         shell: bash
         run: |
