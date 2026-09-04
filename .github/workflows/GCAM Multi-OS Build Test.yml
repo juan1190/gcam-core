@@ -116,8 +116,11 @@ jobs:
           JDK_HOME=$(/usr/libexec/java_home -v 17)
           echo "JAVA_HOME=$JDK_HOME" >> "$GITHUB_ENV"
 
+          ls -la $(brew --prefix tbb)
+
           ln -sfn "$(brew --prefix boost)/include"        libs/boost-lib
           ln -sfn "$(brew --prefix eigen)/include/eigen3" libs/eigen
+          ln -sfn "$(brew --prefix tbb)/include/tbb"      libs/tbb
           ln -sfn "$JDK_HOME/include"                     libs/java/include
           ln -sfn "$JDK_HOME/lib/server"                  libs/java/lib
           ln -sfn "$HOME/gcam-libs/jars"                  libs/jars
