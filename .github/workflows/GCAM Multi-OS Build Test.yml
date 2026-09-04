@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
@@ -55,30 +55,7 @@ jobs:
         shell: bash
         run: echo "JARS_LIB=$HOME/gcam-libs/jars" >> "$GITHUB_ENV"
 
-
-      # ---------- Release libs (Windows & macOS, cached) ----------
-      - name: Cache GCAM release libs
-        if: runner.os != 'Linux'
-        id: cache-libs
-        uses: actions/cache@v4
-        with:
-          path: release-libs
-          key: gcam-release-libs-${{ runner.os }}-${{ env.GCAM_VERSION }}
-
-      - name: Validate cached release libs
-        if: runner.os != 'Linux'
-        id: libs-check
-        shell: bash
-        run: |
-          if [ -d release-libs ] && [ "$(ls -A release-libs)" ]; then
-            echo "valid=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "valid=false" >> "$GITHUB_OUTPUT"
-            rm -rf release-libs
-          fi
-
-
-      # ---------- Linux ----------
+      # ---------- Linux dependencies ----------
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -95,10 +72,10 @@ jobs:
           echo "TBB_INCLUDE=/usr/include" >> "$GITHUB_ENV"
           echo "TBB_LIB=/usr/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
 
+      # ---------- macOS dependencies ----------
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
         run: |
-          brew update
           brew install boost eigen tbb
           brew install --cask temurin@17
           JDK_HOME=$(/usr/libexec/java_home -v 17)
@@ -119,9 +96,81 @@ jobs:
           # sanity checks — fail early with a useful message
           test -f libs/tbb/include/tbb/tbb.h
           test -f libs/boost-lib/boost/version.hpp
-          test -f libs/eigen/Eigen/Core || ls libs/eigen
+          test -d libs/eigen/Eigen || ls libs/eigen
           test -f libs/java/include/jni.h
-          
+
+      - name: ccache (macOS)
+        if: runner.os == 'macOS'
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ccache-${{ runner.os }}
+
+      # ---------- Windows dependencies ----------
+      - name: Setup MSBuild (Windows)
+        if: runner.os == 'Windows'
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup Java (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Cache Windows libs
+        if: runner.os == 'Windows'
+        id: cache-winlibs
+        uses: actions/cache@v4
+        with:
+          path: C:\gcam-libs
+          key: gcam-winlibs-boost1.85-tbb2021.13-eigen3.4
+
+      - name: Download & build libs (Windows)
+        if: runner.os == 'Windows' && steps.cache-winlibs.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force C:\gcam-libs | Out-Null
+
+          # ---- Boost (headers + system/filesystem compiled) ----
+          curl.exe -fL -o boost.zip https://archives.boost.io/release/1.85.0/source/boost_1_85_0.zip
+          Expand-Archive boost.zip -DestinationPath C:\gcam-libs
+          Rename-Item C:\gcam-libs\boost_1_85_0 boost-lib
+          Remove-Item boost.zip
+          Set-Location C:\gcam-libs\boost-lib
+          .\bootstrap.bat
+          .\b2 --with-system --with-filesystem address-model=64 variant=release stage
+
+          # ---- oneTBB (prebuilt Windows package) ----
+          Set-Location $env:GITHUB_WORKSPACE
+          curl.exe -fL -o tbb.zip https://github.com/oneapi-src/oneTBB/releases/download/v2021.13.0/oneapi-tbb-2021.13.0-win.zip
+          Expand-Archive tbb.zip -DestinationPath C:\gcam-libs
+          Rename-Item C:\gcam-libs\oneapi-tbb-2021.13.0 tbb
+          Remove-Item tbb.zip
+
+          # ---- Eigen (header-only) ----
+          curl.exe -fL -o eigen.zip https://gitlab.com/libeigen/eigen/-/archive/3.4.0/eigen-3.4.0.zip
+          Expand-Archive eigen.zip -DestinationPath C:\gcam-libs
+          Rename-Item C:\gcam-libs\eigen-3.4.0 eigen
+          Remove-Item eigen.zip
+
+      - name: Set up libs folder (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force libs\java | Out-Null
+          New-Item -ItemType Junction -Path libs\boost-lib -Target C:\gcam-libs\boost-lib
+          New-Item -ItemType Junction -Path libs\tbb       -Target C:\gcam-libs\tbb
+          New-Item -ItemType Junction -Path libs\eigen     -Target C:\gcam-libs\eigen
+          New-Item -ItemType Junction -Path libs\java\include -Target "$env:JAVA_HOME\include"
+          New-Item -ItemType Junction -Path libs\java\lib     -Target "$env:JAVA_HOME\lib"
+          New-Item -ItemType Junction -Path libs\jars -Target "$env:USERPROFILE\gcam-libs\jars"
+
+          # sanity checks — fail early
+          if (-not (Test-Path libs\tbb\include\tbb\tbb.h))       { throw "tbb headers missing" }
+          if (-not (Test-Path libs\boost-lib\boost\version.hpp)) { throw "boost headers missing" }
+          if (-not (Test-Path libs\boost-lib\stage\lib))         { throw "boost compiled libs missing" }
+          if (-not (Test-Path libs\java\include\jni.h))          { throw "jni.h missing" }
+
       # ---------- Builds ----------
       - name: Build GCAM (Linux)
         if: runner.os == 'Linux'
@@ -142,32 +191,54 @@ jobs:
         run: |
           set -eo pipefail
           BUILD_START=$(date +%s)
-          xcodebuild -list -project cvs/objects/build/xcode3/objects.xcodeproj
           xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
             -target objects \
             -configuration Release \
             ARCHS=$(uname -m) \
             ONLY_ACTIVE_ARCH=YES \
+            CC="ccache clang" CXX="ccache clang++" \
+            CLANG_ENABLE_MODULES=NO \
             build 2>&1 | tee build.log
           BUILD_END=$(date +%s)
           echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
-          
-          # Xcode stages the product here; normalize to exe/gcam.exe
-          cp exe/build/UninstalledProducts/macosx/gcam exe/gcam.exe
-          
+
+          # Xcode stages the product; normalize to exe/gcam.exe
+          BIN=$(find exe/build -type f -name gcam -perm +111 | head -n 1)
+          test -n "$BIN"
+          cp "$BIN" exe/gcam.exe
+
+      - name: Build GCAM (Windows)
+        if: runner.os == 'Windows'
+        id: build-win
+        shell: bash
+        run: |
+          set -eo pipefail
+          BUILD_START=$(date +%s)
+          MSBuild.exe cvs/objects/build/vc10/objects.sln \
+            -m -p:Configuration=Release -p:Platform=x64 2>&1 | tee build.log
+          BUILD_END=$(date +%s)
+          echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
+
+          # Runtime DLL needed next to the exe
+          cp libs/tbb/redist/intel64/vc14/tbb12.dll exe/ || true
+
+      # ---------- Verify & artifacts ----------
       - name: Verify executable
         shell: bash
         run: |
-          ls exe/ || true
-          test -f exe/gcam.exe && echo "Build artifact found"
-      - name: Upload executable (Linux)
-        if: runner.os == 'Linux'
+          ls -la exe/
+          test -f exe/gcam.exe
+          file exe/gcam.exe || true
+          echo "Build artifact found"
+
+      - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: gcam-exe-${{ github.run_number }}
-          path: exe/
+          name: gcam-exe-${{ matrix.os }}-${{ github.run_number }}
+          path: exe/gcam.exe
           retention-days: 14
 
+      # ---------- Metrics ----------
       - name: Collect metrics
         if: always()
         shell: bash
@@ -199,6 +270,7 @@ jobs:
             echo "| Binary size | ${BINARY_SIZE} bytes |"
             echo "| Warnings | ${WARNINGS} |"
           } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload metrics and logs
         if: always()
         uses: actions/upload-artifact@v4
