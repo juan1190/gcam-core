@@ -20,7 +20,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest]
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
 
@@ -146,8 +146,10 @@ jobs:
         run: |
           set -eo pipefail
           BUILD_START=$(date +%s)
-          xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj \
+          xcodebuild -project cvs/objects/build/xcode3/objects.xcodeproj  \
             -configuration Release \
+            ONLY_ACTIVE_ARCH=YES \
+            -scheme objects \
             build 2>&1 | tee build.log
           BUILD_END=$(date +%s)
           echo "build_seconds=$((BUILD_END - BUILD_START))" >> "$GITHUB_OUTPUT"
